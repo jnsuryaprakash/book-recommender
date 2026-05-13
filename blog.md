@@ -1,4 +1,4 @@
-# I read 210 books. An agent picked my next 100 — from my library's shelf.
+# I read 200+ books. An agent picked my next 100 — from my library's shelf.
 
 > 16,450 candidates. 210 priors. 9 themes. One weekend.
 > No "you might also like." Just books I can borrow tomorrow.
@@ -15,7 +15,7 @@ I wanted a recommender that **constrains itself to my library's digital collecti
 
 I had two corpora:
 - **The taste signal**: 210 nonfiction books I'd already read, listed on my blog.
-- **The candidate pool**: Plano's English-language nonfiction on Libby.
+- **The candidate pool**: Bentonville English-language nonfiction on Libby.
 
 Bridge them with vectors + an LLM curator. Ship.
 
@@ -25,8 +25,8 @@ Bridge them with vectors + an LLM curator. Ship.
 
 ```
 ┌────────────────────────────┐         ┌────────────────────────────────┐
-│  Blogger reading list      │         │  Plano Libby digital catalog   │
-│  (HTML)                    │         │  (OverDrive Thunder API)        │
+│  Blogger reading list      │         │   Libby digital catalog        │
+│  (HTML)                    │         │  (OverDrive Thunder API)       │
 └─────────────┬──────────────┘         └─────────────┬──────────────────┘
               │                                       │
               ▼                                       ▼
@@ -37,7 +37,7 @@ Bridge them with vectors + an LLM curator. Ship.
        │ Google Books │                       │ subject=111,en   │
        └──────┬───────┘                       └─────────┬────────┘
               │                                         │
-              │ data/read.json (210)                    │ data/plano_catalog.json (16,450)
+              │ data/read.json (210)                    │ data/library_catalog.json (16,450)
               └────────────────────┬────────────────────┘
                                    ▼
                             embed.py
@@ -158,7 +158,6 @@ Hand the top 300 + a compact taste profile to **Claude Opus 4.7** with strict co
 
 ## The bugs that mattered
 
-- **Walmart's MITM proxy** broke every HTTPS call. `pip install truststore; truststore.inject_into_ssl()` — uses the macOS keychain, two lines, done.
 - **Thunder API rejects** valid-looking params: `format=ebook` → 400. Only `ebook-overdrive` works. `perPage=120` → 400. Cap is 96.
 - **Telugu section detection** failed against `<strong>` because the marker was actually `<div>Telugu:</div>`. Regex `\btelugu\s*:?\s*<` caught both.
 - **Claude Opus 4.7 deprecated `temperature`.** Just drop the parameter.
@@ -259,7 +258,8 @@ A weekend, 700 lines of Python, $0.40 of Opus, and one undocumented API later �
 
 The world doesn't need another "you might also like." It needs personal pipelines.
 
-```bash
-git clone … && python -m scripts.{ingest_reads,fetch_catalog,embed,rank,rerank,render}
-open output/next_100.html
-```
+##References
+https://jnsuryaprakash.blogspot.com/2026/05/next-200-books-recommendation-for-ai.html
+https://github.com/jnsuryaprakash/book-recommender
+
+
