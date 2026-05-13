@@ -1,0 +1,24 @@
+# Local config — never commit your API key
+.env
+.env.local
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# Pickled TF-IDF vectors (large, regenerable from catalog + reads)
+data/**/vectors.pkl
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Note: committed demo artifacts (data/<lib>/catalog.json, ranked.json,
+# next_100.json, and output/<lib>/*.md|html|png) are intentionally tracked
+# so visitors can see real recommendations without running the pipeline.
