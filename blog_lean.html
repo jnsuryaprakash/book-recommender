@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>How I Built a Library-Constrained Book Recommender</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121a33;
+      --text: #eaf0ff;
+      --muted: #b5c0e5;
+      --accent: #7cc4ff;
+      --border: #2a3768;
+      --code: #0f1730;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      line-height: 1.6;
+      background: var(--bg);
+      color: var(--text);
+    }
+    main {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { font-size: 2rem; margin: 0 0 12px; }
+    h2 { font-size: 1.35rem; margin-top: 36px; }
+    h3 { font-size: 1.08rem; margin-top: 24px; }
+    p, li { color: var(--muted); }
+    .lead { font-size: 1.06rem; margin-top: 6px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin: 18px 0;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin: 14px 0 4px;
+    }
+    .metric {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+    }
+    .metric strong { display: block; color: var(--text); font-size: 1.1rem; }
+    pre {
+      overflow-x: auto;
+      background: var(--code);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      color: #d9e4ff;
+      font-size: 0.92rem;
+    }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    img {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      margin: 10px 0;
+    }
+    a { color: var(--accent); }
+    .small { font-size: 0.92rem; }
+    footer {
+      margin-top: 38px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>I read 200+ books. An agent picked my next 100 from my library shelf.</h1>
+    <p class="lead">
+      I wanted recommendations constrained to books I can borrow now, not generic "you might also like" suggestions.
+      So I built a pipeline that combines my reading history with Libby/OverDrive catalog data, then uses an LLM as a final curator.
+    </p>
+    <p>
+      Code: <a href="https://github.com/jnsuryaprakash/book-recommender">github.com/jnsuryaprakash/book-recommender</a>
+    </p>
+
+    <div class="card">
+      <h2 style="margin-top: 0;">At a glance</h2>
+      <div class="metrics">
+        <div class="metric"><strong>210</strong> prior reads parsed</div>
+        <div class="metric"><strong>16,450</strong> library titles scanned</div>
+        <div class="metric"><strong>300</strong> candidates to rerank</div>
+        <div class="metric"><strong>87</strong> final picks</div>
+      </div>
+      <p class="small">Runtime: ~12 minutes local compute + ~30 seconds LLM call. LLM token cost: &lt;$0.40 end-to-end.</p>
+    </div>
+
+    <h2>Output</h2>
+    <p>
+      The pipeline produced themed, borrowable recommendations and stayed inexpensive to run
+      (under $0.40 in LLM token cost end-to-end).
+    </p>
+    <img src="output/plano/covers_mosaic.png" alt="Plano recommendation cover mosaic" />
+    <p class="small">
+      Plano output: 87 picks across 9 themes. Sample themes include AI futures and critiques, decision-making,
+      leadership, founders and operators, and contemplative wisdom.
+    </p>
+    <img src="output/lib2go/covers_mosaic.png" alt="Bentonville recommendation cover mosaic" />
+    <p class="small">
+      Bentonville output: same pipeline, different catalog, different final mix.
+    </p>
+
+    <h2>Technical approach</h2>
+    <p>
+      Inputs: (1) my historical reading list, (2) Libby catalog data for a specific library.
+      Output: themed recommendations where every result maps to a real, borrowable title.
+    </p>
+
+    <h3>1) Ingest taste signal</h3>
+    <p>Parse Blogger HTML list, keep English section, enrich each title via Open Library and Google Books fallback.</p>
+    <pre><code>telugu_idx = re.search(r"\btelugu\s*:?\s*&lt;", body_html, re.I)
+english_html = body_html[: telugu_idx.start()] if telugu_idx else body_html</code></pre>
+
+    <h3>2) Crawl Libby/OverDrive catalog</h3>
+    <p>
+      Libby web traffic revealed usable Thunder API params. Key gotcha: subject must be numeric and
+      formats are strict (`ebook-overdrive`, not `ebook`).
+    </p>
+    <pre><code>params = {
+    "format": "ebook-overdrive",
+    "subject": "111",   # nonfiction
+    "language": "en",
+    "perPage": 96,      # max
+    "page": page,
+}</code></pre>
+
+    <h3>3) Local semantic ranking (TF-IDF + cosine)</h3>
+    <p>
+      For this corpus size, sparse TF-IDF vectors are fast, cheap, and good enough to produce a strong top-N candidate set.
+    </p>
+    <pre><code>vec = TfidfVectorizer(
+    max_features=40_000,
+    ngram_range=(1, 2),
+    stop_words="english",
+    min_df=2,
+    max_df=0.85,
+    sublinear_tf=True,
+)</code></pre>
+
+    <h3>4) Multi-interest scoring with k-means centroids</h3>
+    <p>
+      Instead of one global user centroid, cluster read vectors (k=6) and score candidates by max similarity to any centroid.
+      This preserves niche interests.
+    </p>
+    <pre><code>km = KMeans(n_clusters=6, random_state=42).fit(read_vecs.toarray())
+centroids = l2_normalize(km.cluster_centers_)
+sims = cat_vecs @ centroids.T
+scores = np.asarray(sims).max(axis=1)</code></pre>
+
+    <h3>5) LLM rerank for curation quality</h3>
+    <p>
+      Feed top 300 candidates + taste profile to Claude with hard constraints:
+      exact title IDs only, max per author, themed grouping, one-line rationale per pick.
+    </p>
+
+    <h2>What mattered in practice</h2>
+    <ul>
+      <li>Undocumented API params caused repeated 400 errors until exact values were discovered.</li>
+      <li>HTML marker variance in the source list required robust regex handling.</li>
+      <li>Sparse-dense multiplication type behavior needed explicit <code>np.asarray()</code> before reduction.</li>
+    </ul>
+
+    <h2>Run it yourself</h2>
+    <pre><code>git clone https://github.com/jnsuryaprakash/book-recommender
+cd book-recommender
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -e . && cp .env.example .env
+python -m scripts.run --library &lt;YOUR_KEY&gt;
+open output/&lt;YOUR_KEY&gt;/next_100.html</code></pre>
+
+    <footer>
+      <p>
+        Core idea: a recommender should optimize for relevance <em>and</em> immediate availability.
+        Constraining recommendations to a real borrowable catalog makes the output materially more useful.
+      </p>
+      <p class="small">
+        References:
+        <a href="https://jnsuryaprakash.blogspot.com/2026/05/next-200-books-recommendation-for-ai.html">original blog post</a>
+        ·
+        <a href="https://github.com/jnsuryaprakash/book-recommender">project repository</a>
+      </p>
+    </footer>
+  </main>
+</body>
+</html>
